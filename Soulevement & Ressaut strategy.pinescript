@@ -1,0 +1,224 @@
+// This source code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
+// © Sanji_moku
+
+//@version=4
+strategy(title = "Soulevement/Ressaut strategy", shorttitle = "Soulevement/Ressaut strategy", overlay = true, initial_capital=10000)
+
+// ---------------- INPUT  -------------- //
+// Ichimoku lines   //
+TenkanLen = input(9, title = "Tenkan-Sen", minval = 1)
+KijunLen  = input(26, title = "Kijun-Sen", minval = 1)
+SSBLen    = input(52, title = "Senkou Span B", minval = 1)
+Offset    = input(26, title = "Offset", minval = 1)
+
+// Date Input Range  //
+mySession = input(title="Hours range for Alert", type=input.session, defval="0900-1700:23456")
+
+// Activate //
+alert       = input(false, title = "Enable Alert")
+ShowTwist   = input(true, title = "Show Twist")
+showSession = input(false, title = "Show Date Range")
+ShowLines   = input(true, title = "Show Ichimoku Lines")
+
+periodK = input(14, title="K", minval=1)
+periodD = input(3, title="D", minval=1)
+smoothK = input(3, title="Smooth", minval=1)
+
+risk_per_trade = input(title="Risk par trade (%)",type=input.float,minval=0,maxval=100,step=0.1,defval=2)
+tp_multi = input(title="Ratio Take Profit en % (%)",type=input.float,minval=1,maxval=100,step=0.1,defval=2)
+nbrpips = input(title="Stop Loss en Pips",type=input.integer,minval=0,maxval=300,step=0.1,defval=5)*10
+
+// ---------------- FONCTIONS  -------------- //
+mediumHL(len) => avg(highest(len),lowest(len))
+InSession(session) => na(time(timeframe.period, session)) == false  // InSession() determines if a price bar falls inside the specified session
+
+// ---------------- ICHIMOKUES VALUES -------------- //
+TenkanValue = mediumHL(TenkanLen)
+KijunValue = mediumHL(KijunLen)
+SSAValue = avg(TenkanValue,KijunValue)
+SSBValue = mediumHL(SSBLen)
+Chikou = close
+
+Bas = lowest(close,52)
+Haut= highest(close,52)
+
+k = sma(stoch(close, high, low, periodK), smoothK)
+d = sma(k, periodD)
+
+breakOutHaut = close > highest(52)[1]
+breakOutBas = close < lowest(52)[1]
+
+var inRange = false
+var entree = 0.0
+// ---------------- CONDITIONS -------------- //
+twist = (SSAValue[1] > SSBValue[1] and SSAValue[0] < SSBValue[0]) or (SSAValue[1]<SSBValue[1] and SSAValue[0]>SSBValue[0]) or (SSAValue[0] == SSBValue[0])
+
+// Get user input
+fibLevel = input(title="Fib Level", type=input.float, defval=0.333)
+colorFilter = input(title="Color Must Match", type=input.bool, defval=false)
+
+// Calculate fibonacci level for current candle
+bullFib = (low - high) * fibLevel + high
+bearFib = (high - low) * fibLevel + low
+
+// Determine which price source closes or opens highest/lowest
+lowestBody = close < open ? close : open
+highestBody = close > open ? close : open
+
+// Determine if we have a valid hammer or shooting star
+hammerCandle = lowestBody >= bullFib and (not colorFilter or close > open)
+starCandle = highestBody <= bearFib and (not colorFilter or close < open)
+
+condition_haut_avant = close[2] > open[2] and open[1] >= close[2]
+condition_bas_avant = close[2] < open[2] and open[1] <= close[2]
+
+confirmation_haut = close < open and open <= close[1]
+confirmation_bas = close > open and open >= close[1]
+
+if twist
+    inRange := true
+    
+if inRange[1] and (breakOutHaut or breakOutBas)
+    inRange := false
+    
+surachat = k>80 and d>80
+survente = k<20 and d<20
+
+isGreenCandle() => 
+    if close > open
+        true
+    else
+        false
+
+lowerShadow() => 
+    if isGreenCandle()
+        open - low
+    else 
+        close - low
+
+upperShadow() => 
+    if isGreenCandle()
+        high - close
+    else 
+        high - open
+
+realBody() => 
+    abs(close - open)
+
+hammerAndHangingMan=(lowerShadow() > 2 * realBody() and upperShadow() < realBody())
+
+bullishEngulfing=(open[1] > close[1] and close > open and close[1] >= open and open[1] < close)
+
+bearishEngulfing=(close[1] > open[1] and open > close and close[1] <= open and close < open[1])
+
+buy_signal = inRange and survente and (hammerCandle or bullishEngulfing) and (strategy.position_size == 0)
+sell_signal = inRange and surachat and (starCandle or bearishEngulfing) and (strategy.position_size == 0)
+
+
+
+
+if (strategy.position_size[1] == 0) and (strategy.position_size != 0) // New position entry
+    entree := open
+
+newpos = (strategy.position_size[1] == 0) and (strategy.position_size != 0)
+
+//conditionLong = bullishStar and ressaut and (strategy.position_size == 0)
+//conditionShort = bearishStar and soulevement and (strategy.position_size == 0)
+
+
+
+//ENTRY AND EXIT
+
+//---PIPS---//
+//var SL_from_Long = close - nbrpips * syminfo.mintick
+//var TP_from_Long = close + nbrpips * 2 * syminfo.mintick
+//SL_from_Long := strategy.position_size == 0 ? close - nbrpips * syminfo.mintick : SL_from_Long[1]
+//TP_from_Long := strategy.position_size == 0 ? close + nbrpips * tp_multi * syminfo.mintick : TP_from_Long[1]
+
+
+//---Kijun---//
+//var SL_from_Long = (KijunValue[1] - 20 * syminfo.mintick )
+//var TP_from_Long = close +(close - SL_from_Long) * tp_multi
+//SL_from_Long := strategy.position_size == 0 ? (KijunValue[1] - 20 * syminfo.mintick ): SL_from_Long[1]
+//TP_from_Long := strategy.position_size == 0 ? close +(close - SL_from_Long) * tp_multi : TP_from_Long[1]
+
+//---Low and High---//
+var SL_from_Long = low - nbrpips * syminfo.mintick
+var TP_from_Long = close + (close - SL_from_Long) * tp_multi
+SL_from_Long := strategy.position_size == 0 ? low - nbrpips * syminfo.mintick : SL_from_Long[1]
+TP_from_Long := strategy.position_size == 0 ? close + (close - SL_from_Long) * tp_multi : TP_from_Long[1]
+
+
+
+//---PIPS---//
+//var SL_from_Short = close + nbrpips * syminfo.mintick
+//var TP_from_Short = close - nbrpips * 2 * syminfo.mintick
+//SL_from_Short := strategy.position_size == 0 ? close + nbrpips * syminfo.mintick : SL_from_Short[1]
+//TP_from_Short := strategy.position_size == 0 ? close - nbrpips * tp_multi * syminfo.mintick : TP_from_Short[1]
+
+//---Kijun---//
+//var SL_from_Short = (KijunValue[1] + 20 * syminfo.mintick )
+//var TP_from_Short = close - (SL_from_Short - close) * tp_multi
+//SL_from_Short := strategy.position_size == 0 ? (KijunValue[1] + 20 * syminfo.mintick ): SL_from_Short[1]
+//TP_from_Short := strategy.position_size == 0 ? close - (SL_from_Short - close) * tp_multi : TP_from_Short[1]
+
+//---Low and High---//
+var SL_from_Short = high + nbrpips * syminfo.mintick
+var TP_from_Short = close - (SL_from_Short - close) * tp_multi
+SL_from_Short := strategy.position_size == 0 ? high+ nbrpips * syminfo.mintick : SL_from_Short[1]
+TP_from_Short := strategy.position_size == 0 ? close - (SL_from_Short - close) * tp_multi : TP_from_Short[1]
+
+
+// ---------------- RISK MANAGEMENT -------------- //
+riskEquity  = risk_per_trade * strategy.equity * 0.01
+entryPrice = close 
+posSize     = riskEquity / (entryPrice - SL_from_Long)
+posSizeShort     = riskEquity / (SL_from_Short - entryPrice)
+
+// ---------------- ORDERS -------------- //
+strategy.entry("Ressaut", strategy.long, qty=posSize, when=buy_signal)
+strategy.exit("Stop Long","Ressaut", stop = SL_from_Long, limit = TP_from_Long)
+//strategy.exit("Stop Long","Long Breakout", stop = stopLoss, trail_points=start_trail, trail_offset=stop_trail)
+
+strategy.entry("Soulèvement", strategy.short,qty=posSizeShort, when=sell_signal)
+strategy.exit("Stop Short","Soulèvement", stop = SL_from_Short, limit = TP_from_Short)
+
+
+// ---------------- PLOT -------------- //
+plot(ShowLines ? TenkanValue : na, title = "Tenkan-Sen", color = color.red, linewidth = 1)
+plot(ShowLines ? KijunValue : na , title = "Kijun-Sen", color = color.blue, linewidth = 1)
+plot(ShowLines ? SSAValue : na , title = "Senkou Span A", color = color.orange, linewidth = 2, offset = Offset)
+plot(ShowLines ? SSBValue : na , title = "Senkou Span B", color = color.aqua, linewidth = 2, offset = Offset)
+plot(ShowLines ? Chikou : na , title = "Chikou Span", color = color.black, linewidth = 1, offset = -Offset)
+//plot(Bas,title="Bas")
+//plot(Haut, title="Haut")
+bgcolor(color=InSession(mySession) and showSession? color.red : na, title="Trading Session", transp=96)
+
+plotshape(twist and ShowTwist, text="Twist", textcolor=color.black, style=shape.diamond, color=color.black,location= location.abovebar, size=size.tiny)
+plotshape(sell_signal, textcolor=color.red, style=shape.triangledown, color=color.red,location= location.abovebar, size=size.tiny)
+plotshape(buy_signal, textcolor=color.green, style=shape.triangleup, color=color.green,location= location.belowbar, size=size.tiny)
+
+//alertcondition(condition=twist,
+//     title="Twist detector",
+  //   message= "Twist")
+  
+line_entree = plot(strategy.position_size != 0 ? entree : na , color=color.black, style=plot.style_linebr)
+
+// = plot(strategy.position_size > 0 ? stop_trail/100 : na, style=plot.style_linebr, color=color.orange, linewidth=1, title="Stop trail")
+//lineStart_Trail_from_Long = plot(strategy.position_size > 0 ? start_trail/100 : na, style=plot.style_linebr, color=color.green, linewidth=1, title="Activate Trail SL")
+//lineSL_from_Long = plot(strategy.position_size > 0 ? stopLoss : na, style=plot.style_linebr, color=color.red, linewidth=1, title="Long Fixed SL")
+
+//fill(lineStop_trail_from_Long, lineStart_Trail_from_Long, color=color.orange)
+//fill(lineStart_Trail_from_Long, line_entree, color=color.green)
+//fill(line_entree, lineSL_from_Long, color=color.red)
+
+lineTP_from_Long = plot(strategy.position_size > 0 ? TP_from_Long : na, style=plot.style_linebr, color=color.green, linewidth=1, title="Short Take Profit")
+lineSL_from_Long = plot(strategy.position_size > 0 ? SL_from_Long : na, style=plot.style_linebr, color=color.red, linewidth=1, title="Short Fixed SL")
+fill(lineTP_from_Long, line_entree, color=color.green)
+fill(line_entree, lineSL_from_Long, color=color.red)
+
+lineTP_from_Short = plot(strategy.position_size < 0 ? TP_from_Short : na, style=plot.style_linebr, color=color.green, linewidth=1, title="Short Take Profit")
+lineSL_from_Short= plot(strategy.position_size < 0 ? SL_from_Short : na, style=plot.style_linebr, color=color.red, linewidth=1, title="Short Fixed SL")
+
+fill(lineTP_from_Short, line_entree, color=color.green)
+fill(line_entree, lineSL_from_Short, color=color.red)
