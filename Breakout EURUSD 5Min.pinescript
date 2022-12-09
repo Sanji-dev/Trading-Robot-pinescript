@@ -1,0 +1,176 @@
+// This source code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
+// © Sanji_Moku
+
+//@version=4
+strategy("Robot Forex BREAKOUT EUR/USD 5MIN - Ichimoku", shorttitle="BREAKOUT EUR/USD 5MIN" ,overlay=true, initial_capital=10000)
+
+// ------- Ichimoku INPUT ------- //
+TenkanLen = input(9, title = "Tenkan-Sen", minval = 1)
+KijunLen =  input(26, title = "Kijun-Sen", minval = 1)
+SSBLen =    input(52, title = "Senkou Span B", minval = 1)
+Offset = input(26, title = "Offset", minval = 1)
+ShowTwist = input(false, title = "Show Twist")
+Show_all_Ichimoku_Lines = input(false, title = "Show Ichimoku lines")
+// ------- Session INPUT ------- //
+// Get user input
+mySession = input(title="Session Trading", type=input.session, defval="0200-0400")
+inputHauteurRange = input(title="Hauteur du range (pips)", defval=20, minval=1)*10
+
+risk_per_trade = input(title="Risk par trade (%)",type=input.float,minval=1,maxval=100,step=0.5,defval=2)
+tp_multi = input(title="Ratio Take Profit en % (%)",type=input.float,minval=1,maxval=100,step=0.1,defval=3)
+nbrpips = input(title="Stop Loss en Pips",type=input.integer,minval=1,maxval=100,step=0.1,defval=10)*10
+
+// ------- FONCTIONS ------- //
+mediumHL(len) => avg(highest(len),lowest(len)) // Calculate average between highest and lowest from current candle to len
+InSession(session) => na(time(timeframe.period, session)) == false  // InSession() determines if a price bar falls inside the specified session
+
+// ------- ICHIMOKU VALUES ------- //
+TenkanValue = mediumHL(TenkanLen)
+KijunValue = mediumHL(KijunLen)
+SSAValue = avg(TenkanValue,KijunValue)
+SSBValue = mediumHL(SSBLen)
+Chikou = close
+
+// ------- OTHERS VALUES ------- //
+timeOffset = time - time[1]
+rightTimeOffset = timeOffset * Offset
+
+
+var inRange = false
+var entree = 0.0
+hautRange = highest(SSBLen)
+basRange = lowest(SSBLen)
+hauteurRange = (hautRange - basRange) < syminfo.mintick * inputHauteurRange
+
+// ------- CONDITIONS ------- //
+
+twist = (SSAValue[1] > SSBValue[1] and SSAValue[0] < SSBValue[0]) or (SSAValue[1]<SSBValue[1] and SSAValue[0]>SSBValue[0]) or (SSAValue[0] == SSBValue[0])
+breakOutHaut = close > hautRange[1]
+breakOutBas = close < basRange[1]
+
+
+var start_trail = 0.0
+
+if twist and hauteurRange
+    inRange := true
+    
+if inRange[1] and (breakOutHaut or breakOutBas)
+    inRange := false
+    
+
+if (strategy.position_size[1] == 0) and (strategy.position_size != 0) // New position entry
+    entree := open
+
+newpos = (strategy.position_size[1] == 0) and (strategy.position_size != 0)
+conditionLong = inRange[1] and breakOutHaut and InSession(mySession) and hauteurRange[1] and (twist[1] or twist[2])
+conditionShort = inRange[1] and breakOutBas and InSession(mySession) and hauteurRange[1] and (twist[1] or twist[2])
+
+
+//ENTRY AND EXIT
+
+
+var SL_from_Long = close - nbrpips * syminfo.mintick
+var TP_from_Long = close + nbrpips * 2 * syminfo.mintick
+SL_from_Long := strategy.position_size == 0 ? close - nbrpips * syminfo.mintick : SL_from_Long[1]
+TP_from_Long := strategy.position_size == 0 ? close + nbrpips * tp_multi * syminfo.mintick : TP_from_Long[1]
+//var SL_from_Long = (KijunValue[1] - 20 * syminfo.mintick )
+//var TP_from_Long = close +(close - SL_from_Long) * tp_multi
+//SL_from_Long := strategy.position_size == 0 ? (KijunValue[1] - 20 * syminfo.mintick ): SL_from_Long[1]
+//TP_from_Long := strategy.position_size == 0 ? close +(close - SL_from_Long) * tp_multi : TP_from_Long[1]
+
+var SL_from_Short = close + nbrpips * syminfo.mintick
+var TP_from_Short = close - nbrpips * 2 * syminfo.mintick
+SL_from_Short := strategy.position_size == 0 ? close + nbrpips * syminfo.mintick : SL_from_Short[1]
+TP_from_Short := strategy.position_size == 0 ? close - nbrpips * tp_multi * syminfo.mintick : TP_from_Short[1]
+//var SL_from_Short = (KijunValue[1] + 20 * syminfo.mintick )
+//var TP_from_Short = close - (SL_from_Short - close) * tp_multi
+//SL_from_Short := strategy.position_size == 0 ? (KijunValue[1] + 20 * syminfo.mintick ): SL_from_Short[1]
+//TP_from_Short := strategy.position_size == 0 ? close - (SL_from_Short - close) * tp_multi : TP_from_Short[1]
+
+
+
+//plot(stopLoss,"stopLoss")
+//plot(TP_from_Long,"TP_from_Long")
+//close * 0.00200 / syminfo.mintick 
+//start_trail := newpos ? close * 0.00200 / syminfo.mintick : start_trail[1]
+//var stop_trail = 0.0
+//stop_trail := if (strategy.position_size > 0)
+//    stopValue = close * 0.00100 / syminfo.mintick
+//    max(stopValue, stop_trail[1])
+//else
+//    0
+    
+strategy.risk.max_intraday_filled_orders(2)
+
+
+riskEquity  = risk_per_trade * strategy.equity * 0.01
+entryPrice = close 
+posSize     = riskEquity / (entryPrice - SL_from_Long)
+posSizeShort     = riskEquity / (SL_from_Short - entryPrice )
+
+strategy.entry("Long Breakout", strategy.long, qty=posSize, when=conditionLong)
+strategy.exit("Stop Long","Long Breakout", stop = SL_from_Long, limit = TP_from_Long)
+//strategy.exit("Stop Long","Long Breakout", stop = stopLoss, trail_points=start_trail, trail_offset=stop_trail)
+
+strategy.entry("Short Breakout", strategy.short,qty=posSizeShort, when=conditionShort)
+strategy.exit("Stop Short","Short Breakout", stop = SL_from_Short, limit = TP_from_Short)
+
+//vente() =>
+   //risk = risk_per_trade * strategy.equity
+    //stopLoss = high[1] + atr[1] * atr_mult
+    //lot = risk / (stopLoss - close)
+    //strategy.entry("Short Breakout", strategy.short,lot)
+    //strategy.exit("Stop Short","Short Breakout",  trail_points=slPoints, trail_offset=slOffset)
+
+
+
+
+//PLOT FIXED TP , SL AND ENTRY
+line_entree = plot(strategy.position_size != 0 ? entree : na , color=color.black, style=plot.style_linebr)
+
+// = plot(strategy.position_size > 0 ? stop_trail/100 : na, style=plot.style_linebr, color=color.orange, linewidth=1, title="Stop trail")
+//lineStart_Trail_from_Long = plot(strategy.position_size > 0 ? start_trail/100 : na, style=plot.style_linebr, color=color.green, linewidth=1, title="Activate Trail SL")
+//lineSL_from_Long = plot(strategy.position_size > 0 ? stopLoss : na, style=plot.style_linebr, color=color.red, linewidth=1, title="Long Fixed SL")
+
+//fill(lineStop_trail_from_Long, lineStart_Trail_from_Long, color=color.orange)
+//fill(lineStart_Trail_from_Long, line_entree, color=color.green)
+//fill(line_entree, lineSL_from_Long, color=color.red)
+
+lineTP_from_Long = plot(strategy.position_size > 0 ? TP_from_Long : na, style=plot.style_linebr, color=color.green, linewidth=1, title="Short Take Profit")
+lineSL_from_Long = plot(strategy.position_size > 0 ? SL_from_Long : na, style=plot.style_linebr, color=color.red, linewidth=1, title="Short Fixed SL")
+fill(lineTP_from_Long, line_entree, color=color.green)
+fill(line_entree, lineSL_from_Long, color=color.red)
+
+lineTP_from_Short = plot(strategy.position_size < 0 ? TP_from_Short : na, style=plot.style_linebr, color=color.green, linewidth=1, title="Short Take Profit")
+lineSL_from_Short= plot(strategy.position_size < 0 ? SL_from_Short : na, style=plot.style_linebr, color=color.red, linewidth=1, title="Short Fixed SL")
+
+fill(lineTP_from_Short, line_entree, color=color.green)
+fill(line_entree, lineSL_from_Short, color=color.red)
+
+//PLOT ICHIMOKU LINES
+plot(Show_all_Ichimoku_Lines ? TenkanValue : na, title = "Tenkan-Sen", color = color.red, linewidth = 1)
+plot(Show_all_Ichimoku_Lines ? KijunValue : na , title = "Kijun-Sen", color = color.blue, linewidth = 1)
+plot(Show_all_Ichimoku_Lines ? SSAValue : na , title = "Senkou Span A", color = color.orange, linewidth = 2, offset = Offset)
+plot(Show_all_Ichimoku_Lines ? SSBValue : na , title = "Senkou Span B", color = color.aqua, linewidth = 2, offset = Offset)
+plot(Show_all_Ichimoku_Lines ? Chikou : na , title = "Chikou Span", color = color.black, linewidth = 1, offset = -Offset)
+
+//PLOT HAUT ET BAS RANGE
+plot(inRange and hauteurRange ? hautRange : na, style=plot.style_linebr, title="Haut range", color=color.black, linewidth = 2)
+plot(inRange and hauteurRange ? basRange : na, style=plot.style_linebr, title="Bas range", color=color.black, linewidth = 2)
+
+
+//PLOT TRADING SESSION
+bgcolor(color=InSession(mySession)? color.red : na, title="Trading Session", transp=96)
+
+//PLOT TWIST
+if (ShowTwist and twist and hauteurRange)
+    
+    label = label.new(
+     x = time + rightTimeOffset, 
+     y = SSBValue, 
+     xloc = xloc.bar_time, 
+     yloc = yloc.price,
+     color = color.new(color.black, 50), 
+     style = label.style_circle, 
+     size = size.tiny
+     )
