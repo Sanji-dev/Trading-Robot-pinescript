@@ -1,1 +1,1 @@
-# Trading-Robot-pinescript
+# Trading Robot pinescript
